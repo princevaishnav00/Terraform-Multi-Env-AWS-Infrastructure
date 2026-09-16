@@ -49,9 +49,7 @@ Terra-Project/
 │   ├── 📁 staging/                    # Staging Environment
 │   └── 📁 prod/                       # Production Environment (with RDS)
 │
-├── 📁 Images/                         # Architecture Diagrams & Screenshots
-├── 🔑 Terra_Key                       # SSH Private Key (Git Ignored)
-├── 🔑 Terra_Key.pub                   # SSH Public Key
+├── 📁 Images/                         # Architecture Diagrams & Screenshots          
 ├── 📄 .gitignore                      # Terraform & Security ignore rules
 └── 📄 README.md                       # Project Documentation
 ```
