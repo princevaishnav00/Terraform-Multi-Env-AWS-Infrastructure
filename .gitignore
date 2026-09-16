@@ -1,0 +1,37 @@
+# Local .terraform directories anywhere in repo
+**/.terraform/
+.terraform/
+
+# Terraform lock files (optional - comment out if you want to commit provider lock files)
+# .terraform.lock.hcl
+
+# State files anywhere in repo
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfstate.lock.info
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration files
+.terraformrc
+terraform.rc
+
+# Terraform plan files
+*.tfplan
+tfplan
+
+# Sensitive SSH Keys & Secret Credentials
+Terra_Key
+*.pem
+*.key
+id_rsa
+*.pub

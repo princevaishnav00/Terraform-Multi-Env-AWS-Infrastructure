@@ -1,0 +1,54 @@
+name: "Terraform Destroy"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm teardown'
+        required: true
+        type: string
+
+jobs:
+  destroy:
+    name: "Terraform Destroy Environment"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_destroy }}" != "DESTROY" ]; then
+            echo "::error::Confirmation mismatch! You must type DESTROY in the confirmation box."
+            exit 1
+          fi
+
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Destroy Infrastructure
+        run: |
+          ENV="${{ github.event.inputs.environment }}"
+          echo "WARNING: Destroying infrastructure in environment: $ENV"
+          cd environments/$ENV
+          terraform init
+          terraform destroy -auto-approve

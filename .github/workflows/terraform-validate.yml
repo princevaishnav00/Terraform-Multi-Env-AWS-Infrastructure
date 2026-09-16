@@ -1,0 +1,45 @@
+name: "Terraform Validate & Plan"
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'environments/**'
+      - 'modules/**'
+
+jobs:
+  validate:
+    name: "Terraform Format & Validate"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Validate Dev Environment
+        run: |
+          cd environments/dev
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate Staging Environment
+        run: |
+          cd environments/staging
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate Prod Environment
+        run: |
+          cd environments/prod
+          terraform init -backend=false
+          terraform validate
