@@ -41,11 +41,16 @@ jobs:
         with:
           terraform_version: 1.5.0
 
+
+      - name: Create SSH public key file
+        run: |
+          echo "${{ secrets.TERRAFORM_SSH_PUBLIC_KEY }}" > terrakey.pub
+
       - name: Deploy to Target Environment
         run: |
           ENV="${{ github.event.inputs.environment || 'dev' }}"
           echo "Deploying to environment: $ENV"
-          
+
           cd environments/$ENV
           terraform init
           terraform apply -auto-approve
