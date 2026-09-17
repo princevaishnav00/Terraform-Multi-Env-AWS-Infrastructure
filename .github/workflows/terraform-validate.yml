@@ -8,18 +8,18 @@ on:
     paths:
       - 'environments/**'
       - 'modules/**'
-
-workflow_dispatch:
-  inputs:
-    environment:
-      description: 'Environment to validate'
-      required: true
-      default: 'dev'
-      type: choice
-      options: 
-        - dev
-        - staging 
-        - prod
+ 
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to validate'
+        required: true
+        default: 'dev'
+        type: choice
+        options: 
+          - dev
+          - staging 
+          - prod
 
 jobs:
   validate:
@@ -42,7 +42,7 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment || 'dev' }}"
           echo "Validating environment: $ENV"
-          
+
           cd environments/$ENV
           terraform init -backend=false
           terraform validate
