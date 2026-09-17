@@ -1,0 +1,295 @@
+name: "Terraform Environment Cleanup"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to clean up"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+      confirm_cleanup:
+        description: 'Type "DELETE" to confirm cleanup'
+        required: true
+        type: string
+
+jobs:
+  cleanup:
+    name: "Cleanup Selected Environment"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirm_cleanup }}" != "DELETE" ]; then
+            echo "::error::Confirmation mismatch. You must type DELETE."
+            exit 1
+          fi
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Cleanup Environment
+        env:
+          ENV: ${{ github.event.inputs.environment }}
+          AWS_DEFAULT_REGION: ap-south-1
+        run: |
+
+          echo "======================================"
+          echo "Cleaning environment: $ENV"
+          echo "======================================"
+
+          # ----------------------------------------
+          # 1. Find EC2 instances
+          # ----------------------------------------
+
+          echo "Finding EC2 instances..."
+
+          INSTANCE_IDS=$(aws ec2 describe-instances \
+            --filters \
+              "Name=tag:Environment,Values=$ENV" \
+              "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query 'Reservations[].Instances[].InstanceId' \
+            --output text)
+
+          if [ -n "$INSTANCE_IDS" ]; then
+            echo "EC2 instances found:"
+            echo "$INSTANCE_IDS"
+
+            aws ec2 terminate-instances \
+              --instance-ids $INSTANCE_IDS
+
+            echo "Waiting for EC2 instances to terminate..."
+
+            aws ec2 wait instance-terminated \
+              --instance-ids $INSTANCE_IDS
+
+            echo "EC2 instances terminated."
+          else
+            echo "No EC2 instances found."
+          fi
+
+
+          # ----------------------------------------
+          # 2. Delete EC2 Key Pair
+          # ----------------------------------------
+
+          KEY_NAME="${ENV}-project-key"
+
+          echo "Checking key pair: $KEY_NAME"
+
+          if aws ec2 describe-key-pairs \
+              --key-names "$KEY_NAME" \
+              >/dev/null 2>&1; then
+
+            aws ec2 delete-key-pair \
+              --key-name "$KEY_NAME"
+
+            echo "Deleted key pair: $KEY_NAME"
+          else
+            echo "Key pair not found."
+          fi
+
+
+          # ----------------------------------------
+          # 3. Find VPC
+          # ----------------------------------------
+
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=${ENV}-vpc" \
+            --query 'Vpcs[0].VpcId' \
+            --output text)
+
+          if [ "$VPC_ID" = "None" ] || [ -z "$VPC_ID" ]; then
+            echo "No VPC found for $ENV."
+          else
+
+            echo "Found VPC: $VPC_ID"
+
+
+            # ----------------------------------------
+            # 4. Delete Subnets
+            # ----------------------------------------
+
+            SUBNET_IDS=$(aws ec2 describe-subnets \
+              --filters "Name=vpc-id,Values=$VPC_ID" \
+              --query 'Subnets[].SubnetId' \
+              --output text)
+
+            if [ -n "$SUBNET_IDS" ]; then
+              for SUBNET_ID in $SUBNET_IDS; do
+                echo "Deleting subnet: $SUBNET_ID"
+                aws ec2 delete-subnet \
+                  --subnet-id "$SUBNET_ID"
+              done
+            fi
+
+
+            # ----------------------------------------
+            # 5. Delete Custom Route Table
+            # ----------------------------------------
+
+            ROUTE_TABLE_IDS=$(aws ec2 describe-route-tables \
+              --filters \
+                "Name=vpc-id,Values=$VPC_ID" \
+                "Name=tag:Name,Values=${ENV}-public-rt" \
+              --query 'RouteTables[].RouteTableId' \
+              --output text)
+
+            if [ -n "$ROUTE_TABLE_IDS" ]; then
+              for RT_ID in $ROUTE_TABLE_IDS; do
+
+                echo "Deleting route table associations..."
+
+                ASSOCIATION_IDS=$(aws ec2 describe-route-tables \
+                  --route-table-ids "$RT_ID" \
+                  --query 'RouteTables[0].Associations[?Main==`false`].RouteTableAssociationId' \
+                  --output text)
+
+                if [ -n "$ASSOCIATION_IDS" ]; then
+                  for ASSOC_ID in $ASSOCIATION_IDS; do
+                    echo "Disassociating: $ASSOC_ID"
+
+                    aws ec2 disassociate-route-table \
+                      --association-id "$ASSOC_ID"
+                  done
+                fi
+
+                echo "Deleting route table: $RT_ID"
+
+                aws ec2 delete-route-table \
+                  --route-table-id "$RT_ID"
+
+              done
+            fi
+
+
+            # ----------------------------------------
+            # 6. Delete Internet Gateway
+            # ----------------------------------------
+
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters "Name=tag:Name,Values=${ENV}-igw" \
+              --query 'InternetGateways[0].InternetGatewayId' \
+              --output text)
+
+            if [ "$IGW_ID" != "None" ] && [ -n "$IGW_ID" ]; then
+
+              echo "Found Internet Gateway: $IGW_ID"
+
+              aws ec2 detach-internet-gateway \
+                --internet-gateway-id "$IGW_ID" \
+                --vpc-id "$VPC_ID"
+
+              aws ec2 delete-internet-gateway \
+                --internet-gateway-id "$IGW_ID"
+
+              echo "Internet Gateway deleted."
+            fi
+
+
+            # ----------------------------------------
+            # 7. Delete Security Group
+            # ----------------------------------------
+
+            SG_ID=$(aws ec2 describe-security-groups \
+              --filters \
+                "Name=vpc-id,Values=$VPC_ID" \
+                "Name=tag:Name,Values=${ENV}-default-sg" \
+              --query 'SecurityGroups[0].GroupId' \
+              --output text)
+
+            if [ "$SG_ID" != "None" ] && [ -n "$SG_ID" ]; then
+
+              echo "Deleting Security Group: $SG_ID"
+
+              aws ec2 delete-security-group \
+                --group-id "$SG_ID"
+
+              echo "Security Group deleted."
+            fi
+
+
+            # ----------------------------------------
+            # 8. Delete VPC
+            # ----------------------------------------
+
+            echo "Deleting VPC: $VPC_ID"
+
+            aws ec2 delete-vpc \
+              --vpc-id "$VPC_ID"
+
+            echo "VPC deleted."
+
+          fi
+
+
+          # ----------------------------------------
+          # 9. Delete DynamoDB Table
+          # ----------------------------------------
+
+          TABLE_NAME="${ENV}-project-dynamo-table"
+
+          echo "Checking DynamoDB table: $TABLE_NAME"
+
+          if aws dynamodb describe-table \
+              --table-name "$TABLE_NAME" \
+              >/dev/null 2>&1; then
+
+            aws dynamodb delete-table \
+              --table-name "$TABLE_NAME"
+
+            echo "DynamoDB deletion started."
+
+            aws dynamodb wait table-not-exists \
+              --table-name "$TABLE_NAME"
+
+            echo "DynamoDB table deleted."
+
+          else
+            echo "DynamoDB table not found."
+          fi
+
+
+          # ----------------------------------------
+          # 10. Delete S3 Bucket
+          # ----------------------------------------
+
+          echo "Finding S3 bucket for $ENV..."
+
+          BUCKET_ARNS=$(aws resourcegroupstaggingapi get-resources \
+            --resource-type-filters "s3:bucket" \
+            --tag-filters "Key=Environment,Values=$ENV" \
+            --query 'ResourceTagMappingList[].ResourceARN' \
+            --output text)
+
+          if [ -n "$BUCKET_ARNS" ]; then
+
+            for ARN in $BUCKET_ARNS; do
+
+              BUCKET_NAME="${ARN##*:bucket:}"
+
+              echo "Deleting S3 bucket: $BUCKET_NAME"
+
+              aws s3 rb "s3://$BUCKET_NAME" --force
+
+              echo "S3 bucket deleted: $BUCKET_NAME"
+
+            done
+
+          else
+            echo "No S3 bucket found for $ENV."
+          fi
+
+
+          echo "======================================"
+          echo "Cleanup completed for: $ENV"
+          echo "======================================"
