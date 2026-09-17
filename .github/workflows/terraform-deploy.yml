@@ -44,7 +44,7 @@ jobs:
 
       - name: Create SSH public key file
         run: |
-          echo "${{ secrets.TERRAFORM_SSH_PUBLIC_KEY }}" > terrakey.pub
+          echo "${{ secrets.TERRAFORM_SSH_PUBLIC_KEY }}" > Terra_Key.pub
 
       - name: Deploy to Target Environment
         run: |
