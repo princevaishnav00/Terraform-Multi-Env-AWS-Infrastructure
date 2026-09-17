@@ -45,6 +45,7 @@ jobs:
         run: |
           ENV="${{ github.event.inputs.environment || 'dev' }}"
           echo "Deploying to environment: $ENV"
+          
           cd environments/$ENV
           terraform init
           terraform apply -auto-approve

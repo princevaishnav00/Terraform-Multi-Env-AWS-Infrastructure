@@ -9,6 +9,18 @@ on:
       - 'environments/**'
       - 'modules/**'
 
+workflow_dispatch:
+  inputs:
+    environment:
+      description: 'Environment to validate'
+      required: true
+      default: 'dev'
+      type: choice
+      options: 
+        - dev
+        - staging 
+        - prod
+
 jobs:
   validate:
     name: "Terraform Format & Validate"
@@ -26,20 +38,11 @@ jobs:
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
 
-      - name: Validate Dev Environment
+      - name: Terraform Validate
         run: |
-          cd environments/dev
-          terraform init -backend=false
-          terraform validate
-
-      - name: Validate Staging Environment
-        run: |
-          cd environments/staging
-          terraform init -backend=false
-          terraform validate
-
-      - name: Validate Prod Environment
-        run: |
-          cd environments/prod
+          ENV="${{ github.event.inputs.environment || 'dev' }}"
+          echo "Validating environment: $ENV"
+          
+          cd environments/$ENV
           terraform init -backend=false
           terraform validate
